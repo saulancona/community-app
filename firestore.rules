@@ -1,0 +1,323 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if user is a community member
+    function isMember() {
+      return exists(/databases/$(database)/documents/community/northstar) &&
+             request.auth.uid in get(/databases/$(database)/documents/community/northstar).data.memberIds;
+    }
+
+    // Helper function to check if user is admin (supports multiple admins)
+    function isAdmin() {
+      let doc = get(/databases/$(database)/documents/community/northstar);
+      return exists(/databases/$(database)/documents/community/northstar) &&
+             (request.auth.uid == doc.data.adminId ||
+              (doc.data.keys().hasAny(['adminIds']) && request.auth.uid in doc.data.adminIds));
+    }
+
+    // Helper function to check user's subscription tier
+    function getUserSubscription() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasActiveSubscription() {
+      let user = getUserSubscription();
+      return user.subscriptionStatus == 'active' &&
+             (user.subscriptionTier == 'standard' || user.subscriptionTier == 'all-access');
+    }
+
+    function hasAllAccessSubscription() {
+      let user = getUserSubscription();
+      return user.subscriptionStatus == 'active' && user.subscriptionTier == 'all-access';
+    }
+
+    // Helper: check if the requesting user is on the Growth Lab invite list.
+    // Reads the room-settings/growth-lab doc; returns false if the doc
+    // or the invitedUserIds array is missing.
+    function isInvitedToGrowthLab() {
+      return exists(/databases/$(database)/documents/room-settings/growth-lab) &&
+             get(/databases/$(database)/documents/room-settings/growth-lab).data.keys().hasAny(['invitedUserIds']) &&
+             request.auth.uid in get(/databases/$(database)/documents/room-settings/growth-lab).data.invitedUserIds;
+    }
+
+    // Users collection
+    // - Any authenticated user can read user profiles
+    // - Users can edit their OWN profile, but NOT privileged fields
+    //   (role, subscription tier/status, elite access). Those are granted
+    //   only by admins (promote/demote, manual tier changes) or server-side
+    //   webhooks via the Admin SDK, which bypasses these rules entirely.
+    //   Without this restriction any member could self-grant all-access and
+    //   read/post in paid rooms for free.
+    match /users/{userId} {
+      // Privileged fields a member must never be able to change on themselves.
+      function changesPrivilegedFields() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny([
+                   'role',
+                   'subscriptionTier',
+                   'subscriptionStatus',
+                   'subscriptionExpiresAt',
+                   'hasEliteAccess',
+                   'eliteAccessExpiry',
+                   'stripeCustomerId'
+                 ]);
+      }
+
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == userId;
+      allow update: if isAdmin() ||
+                       (request.auth.uid == userId && !changesPrivilegedFields());
+      allow delete: if false; // Users cannot be deleted
+    }
+
+    // Community collection (single document)
+    // - Anyone can read community data (needed for setup flow and invite validation)
+    // - Only authenticated users can create community (first user)
+    // - Admin can update community, OR authenticated users can add themselves to memberIds
+    match /community/{communityId} {
+      allow read: if true; // Allow anyone to read (needed for invite flow)
+      allow create: if request.auth != null; // Allow first user to create community
+      // Allow update if:
+      // 1. User is the admin, OR
+      // 2. User is adding themselves to memberIds (for invite acceptance)
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.adminId ||
+        (resource.data.keys().hasAny(['adminIds']) && request.auth.uid in resource.data.adminIds) ||
+        (
+          // Only allow adding to memberIds array (not removing or changing other fields)
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'memberCount']) &&
+          request.auth.uid in request.resource.data.memberIds &&
+          !(request.auth.uid in resource.data.memberIds)
+        )
+      );
+      allow delete: if false; // Community cannot be deleted
+    }
+
+    // Messages collection (Northstar Coaching room)
+    // - Paid subscribers (standard or all-access) can read and interact
+    // - Only admins can create messages (including polls and system messages)
+    // - Paid members can update messages (for reactions, pins, poll votes, etc.)
+    // - Only admins can delete messages
+    match /messages/{messageId} {
+      allow read: if isAdmin() || (isMember() && hasActiveSubscription());
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isMember() && hasActiveSubscription());
+      allow delete: if isAdmin(); // Admins can delete messages
+    }
+
+    // Error reports collection - for error tracking and monitoring
+    match /error_reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+
+    // Analytics events collection - for usage tracking
+    match /analytics_events/{eventId} {
+      allow read: if isAdmin();
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+
+    // Typing indicators collection - for real-time typing status
+    match /typing/{typingId} {
+      allow read, write: if isMember();
+    }
+
+    // Invites collection
+    // - Admin can create and delete invites
+    // - Only specific invitee or admin can read their invite (protects PII)
+    // - Invitee or admin can update invite status (to accept)
+    match /invites/{inviteId} {
+      // Allow read only if user is admin OR is the invitee (matched by email/phone)
+      allow read: if isAdmin() ||
+                     (request.auth != null &&
+                      (request.auth.token.email == resource.data.email ||
+                       request.auth.token.phone_number == resource.data.phoneNumber));
+      allow create: if isAdmin();
+      // Allow update only if user is admin OR is the invitee accepting the invite
+      allow update: if isAdmin() ||
+                       (request.auth != null &&
+                        (request.auth.token.email == resource.data.email ||
+                         request.auth.token.phone_number == resource.data.phoneNumber));
+      allow delete: if isAdmin();
+    }
+
+    // Room-specific settings collection
+    // - Any authenticated user can read room settings (chat lock status,
+    //   invite lists). The actual access enforcement lives on each
+    //   messages-{room} collection rule, so reading this doc reveals only
+    //   metadata. Reading it is required for client-side "is this room
+    //   unlocked for me?" checks and must work even if the user's
+    //   community membership state is mid-update.
+    // - Only admin can write room settings
+    match /room-settings/{roomId} {
+      allow read: if request.auth != null;
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Menu items collection (Library)
+    // - Admins can read everything
+    // - Members can read items EXCEPT Rich-Girl-Empire-scoped items
+    //   (audio_library, growth_lab_wins, growth_lab_templates, growth_lab_journals)
+    //   which require admin or Growth Lab invitation
+    // - Admin can create/update/delete all items
+    match /menuItems/{itemId} {
+      allow read: if isAdmin() ||
+                     (isMember() && (
+                       (resource.data.type != 'audio_library' &&
+                        resource.data.type != 'growth_lab_wins' &&
+                        resource.data.type != 'growth_lab_templates' &&
+                        resource.data.type != 'growth_lab_journals') ||
+                       isInvitedToGrowthLab()
+                     ));
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Inner Circle messages collection
+    // - Only all-access subscribers can read/write
+    // - Admins can always access
+    // - Members can update messages for reactions and poll votes
+    match /messages-elite/{messageId} {
+      allow read: if isAdmin() || (isMember() && hasAllAccessSubscription());
+      allow create: if (isAdmin() || hasAllAccessSubscription()) &&
+                      (request.resource.data.senderId == request.auth.uid ||
+                       (isAdmin() && request.resource.data.senderId == 'system'));
+      allow update: if isAdmin() || (isMember() && hasAllAccessSubscription());
+      allow delete: if isAdmin(); // Admins can delete messages
+    }
+
+    // Chat Rooms collection - new structure with subcollections
+    // Northstar Coaching room
+    match /chat-rooms/main/messages/{messageId} {
+      allow read: if isAdmin() || (isMember() && hasActiveSubscription());
+      allow create: if isAdmin() || (isMember() && hasActiveSubscription());
+      allow update: if isAdmin() || (isMember() && hasActiveSubscription());
+      allow delete: if isAdmin(); // Admins can delete messages
+    }
+
+    // Inner Circle room
+    match /chat-rooms/inner-circle/messages/{messageId} {
+      allow read: if isAdmin() || (isMember() && hasAllAccessSubscription());
+      allow create: if isAdmin() || (isMember() && hasAllAccessSubscription());
+      allow update: if isAdmin() || (isMember() && hasAllAccessSubscription());
+      allow delete: if isAdmin(); // Admins can delete messages
+    }
+
+    // Growth Lab (temporary invite-only room, May–Sep 2026)
+    // Open forum: any invited member can read AND send.
+    // NOTE: gating is on the invite list only — does NOT depend on
+    // community memberIds. This prevents lockouts when membership state
+    // is mid-update.
+    match /messages-growth-lab/{messageId} {
+      allow read: if isAdmin() || isInvitedToGrowthLab();
+      allow create: if (isAdmin() || isInvitedToGrowthLab()) &&
+                      (request.resource.data.senderId == request.auth.uid ||
+                       (isAdmin() && request.resource.data.senderId == 'system'));
+      allow update: if isAdmin() || isInvitedToGrowthLab();
+      allow delete: if isAdmin();
+    }
+    match /chat-rooms/growth-lab/messages/{messageId} {
+      allow read: if isAdmin() || isInvitedToGrowthLab();
+      allow create: if (isAdmin() || isInvitedToGrowthLab()) &&
+                      (request.resource.data.senderId == request.auth.uid ||
+                       (isAdmin() && request.resource.data.senderId == 'system'));
+      allow update: if isAdmin() || isInvitedToGrowthLab();
+      allow delete: if isAdmin();
+    }
+
+    // Subscriptions collection
+    // - Users can read their own subscription
+    // - Only admins can write subscriptions (manual grants)
+    // - Webhooks write via admin SDK (not covered by these rules)
+    match /subscriptions/{userId} {
+      allow read: if request.auth.uid == userId || isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+
+      // Subscription history subcollection
+      match /history/{historyId} {
+        allow read: if request.auth.uid == userId || isAdmin();
+        allow write: if false; // Only server can write history
+      }
+    }
+
+    // Growth Lab — Win Wall (user-generated win posts)
+    // - Read by admins or Growth Lab invitees
+    // - Create your own win (senderId matches auth.uid)
+    // - Edit/delete your own win within 24h, OR admin anytime
+    // - Reactions: any reader can update only the reactions field
+    match /growth-lab-wins/{winId} {
+      function isWinReader() {
+        return isAdmin() || isInvitedToGrowthLab();
+      }
+      function isWithinEditWindow() {
+        return resource.data.createdAt is timestamp &&
+               request.time < resource.data.createdAt + duration.value(24, 'h');
+      }
+      function isReactionOnly() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['reactions']);
+      }
+
+      allow read: if isWinReader();
+      allow create: if isWinReader() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.content is string &&
+                       request.resource.data.content.size() > 0 &&
+                       request.resource.data.content.size() <= 2000;
+      allow update: if (
+                       // Own win, within 24h, content/imageUrl/winDate/etc edits
+                       resource.data.userId == request.auth.uid && isWithinEditWindow()
+                     ) ||
+                     (
+                       // Anyone (reader) can toggle reactions on any win
+                       isWinReader() && isReactionOnly()
+                     ) ||
+                     // Admins can do anything
+                     isAdmin();
+      allow delete: if isAdmin() ||
+                       (resource.data.userId == request.auth.uid && isWithinEditWindow());
+    }
+
+    // Growth Lab — Weekly Raffle aggregation doc
+    // - Read by admins or Growth Lab invitees
+    // - Write only by Cloud Functions (admin SDK bypasses rules)
+    match /growth-lab-raffle/{weekId} {
+      allow read: if isAdmin() || isInvitedToGrowthLab();
+      allow write: if false; // server-side only
+    }
+
+    // Message Reports Collection (Apple Guideline 1.2 — UGC moderation)
+    // - Users can create their own reports via the reportMessage Cloud Function
+    //   (which writes via admin SDK and bypasses these rules)
+    // - Direct writes from clients are also allowed if the report is for themselves
+    // - Only admins can read reports for moderation review
+    match /messageReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if request.auth != null &&
+                       request.resource.data.reporterId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Audit Logs Collection
+    // - Comprehensive logging of all critical actions (payments, admin actions, security events)
+    // - Only admins can read logs
+    // - Only server/Cloud Functions can write (via Admin SDK)
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only server-side via Admin SDK
+    }
+
+    // Webhook Logs Collection
+    // - Idempotency tracking for payment webhooks
+    // - Prevents duplicate webhook processing
+    // - Only server/Cloud Functions can read/write (via Admin SDK)
+    match /webhook_logs/{logId} {
+      allow read: if false; // Only server-side
+      allow write: if false; // Only server-side via Admin SDK
+    }
+  }
+}

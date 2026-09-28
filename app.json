@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Northstar Community",
+    "slug": "northstar-community",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "scheme": "northstar",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.example.northstar",
+      "buildNumber": "6",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Used to record voice messages you send in chat. For example: hold the microphone button at the bottom of a chat to record, release to send.",
+        "NSCameraUsageDescription": "Used to take photos to share in chat or set as your profile picture. For example: tap the camera icon in the chat input to capture and send a photo.",
+        "NSPhotoLibraryUsageDescription": "Used to pick photos to share in chat or set as your profile picture. For example: tap the photo icon in the chat input to choose a photo from your library and send it.",
+        "NSPhotoLibraryAddUsageDescription": "Used to save photos from chat to your library. For example: tap Save Image on a photo someone shared to download it to your Photos app."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": false,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.example.northstar"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "YOUR_EAS_PROJECT_ID"
+      }
+    }
+  }
+}

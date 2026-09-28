@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Successful - Northstar</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #000;
+      color: #fff;
+      text-align: center;
+    }
+    .container {
+      background: #1a1a1a;
+      padding: 40px;
+      border-radius: 12px;
+      border: 2px solid #FE2A94;
+    }
+    h1 {
+      color: #FE2A94;
+      margin-top: 0;
+      font-size: 32px;
+    }
+    .success-icon {
+      font-size: 64px;
+      margin: 20px 0;
+    }
+    .message {
+      font-size: 18px;
+      margin: 20px 0;
+      line-height: 1.6;
+    }
+    .note {
+      color: #aaa;
+      font-size: 14px;
+      margin: 20px 0;
+      line-height: 1.5;
+    }
+    button {
+      background: #FE2A94;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    button:hover {
+      background: #d91f7a;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="success-icon">🎉</div>
+    <h1>Payment Successful!</h1>
+    <div class="message">
+      Thank you for your purchase! Your subscription is being activated.
+    </div>
+    <div class="note">
+      Activation is handled securely on our servers and usually completes within
+      a minute. If your access isn't ready when you return to the app, give it a
+      moment and refresh &mdash; or contact support if it doesn't appear.
+    </div>
+    <button onclick="goToApp()">Continue to App</button>
+  </div>
+
+  <script>
+    // NOTE: Subscription activation is performed server-side by the ThriveCart
+    // webhook (Cloud Function using the Admin SDK). This page intentionally does
+    // NOT write subscription/tier data from the client — doing so previously
+    // allowed anyone to grant themselves paid access by crafting URL parameters.
+    function goToApp() {
+      window.location.href = '/welcome';
+    }
+  </script>
+</body>
+</html>

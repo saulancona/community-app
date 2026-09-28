@@ -1,0 +1,111 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check file size (max 5MB)
+    function isValidSize() {
+      return request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // Helper function to check if file is an image
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    // Chat images - users can upload their own images, all members can read
+    match /chat-images/{userId}/{fileName} {
+      // Only authenticated users can read chat images
+      allow read: if isAuthenticated();
+
+      // Users can only upload to their own folder
+      // Must be an image and under 5MB
+      allow write: if isAuthenticated() &&
+                     request.auth.uid == userId &&
+                     isImage() &&
+                     isValidSize();
+    }
+
+    // User avatars - users can upload their own, everyone can read
+    match /avatars/{userId}/{fileName} {
+      // Anyone authenticated can read avatars
+      allow read: if isAuthenticated();
+
+      // Users can only upload to their own avatar folder
+      // Must be an image and under 2MB
+      allow write: if isAuthenticated() &&
+                     request.auth.uid == userId &&
+                     isImage() &&
+                     request.resource.size < 2 * 1024 * 1024;
+    }
+
+    // Voice notes - authenticated users can upload, all members can read
+    match /voice-notes/{fileName} {
+      // Only authenticated users can read voice notes
+      allow read: if isAuthenticated();
+
+      // Authenticated users can upload voice notes (max 10MB)
+      // Allow audio file types
+      allow write: if isAuthenticated() &&
+                     request.resource.contentType.matches('audio/.*') &&
+                     request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Growth Lab Templates — admin-uploaded PDF and Excel templates for the Rich
+    // Girl Empire library. Reads gated to authenticated users; the actual
+    // category-level visibility (Growth Lab invitees + admins) is enforced by the
+    // Firestore rule on the menuItems doc that holds the URL.
+    match /templates/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                     (request.resource.contentType == 'application/pdf' ||
+                      request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                      request.resource.contentType == 'application/vnd.ms-excel') &&
+                     request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // Audio Library audio activations (admin-uploaded library audio).
+    // Larger size cap (50MB) since these are full activations, not short voice notes.
+    // Reads are gated to authenticated users — the actual category-level
+    // visibility (Growth Lab invitees + admins) is enforced by Firestore rules on
+    // the menuItems doc that holds the URL.
+    match /audio-library/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                     request.resource.contentType.matches('audio/.*') &&
+                     request.resource.size < 50 * 1024 * 1024;
+    }
+
+    // Chat videos - users can upload their own videos, all members can read
+    match /chat-videos/{userId}/{fileName} {
+      // Only authenticated users can read chat videos
+      allow read: if isAuthenticated();
+
+      // Users can only upload to their own folder
+      // Must be a video and under 500MB
+      allow write: if isAuthenticated() &&
+                     request.auth.uid == userId &&
+                     request.resource.contentType.matches('video/.*') &&
+                     request.resource.size < 500 * 1024 * 1024;
+    }
+
+    // Growth Lab Win Wall — images attached to wins
+    // Path: /win-wall/{userId}/{fileName} (so users can only write to their own folder)
+    match /win-wall/{userId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                     request.auth.uid == userId &&
+                     isImage() &&
+                     request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Deny all other paths by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

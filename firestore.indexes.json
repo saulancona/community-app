@@ -1,0 +1,54 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "menuItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "menuItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "order", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isPinned", "order": "ASCENDING" },
+        { "fieldPath": "pinnedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messages-elite",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isPinned", "order": "ASCENDING" },
+        { "fieldPath": "pinnedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messages-growth-lab",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isPinned", "order": "ASCENDING" },
+        { "fieldPath": "pinnedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "growth-lab-wins",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "weekId", "order": "ASCENDING" },
+        { "fieldPath": "userId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

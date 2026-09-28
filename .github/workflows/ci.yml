@@ -1,0 +1,60 @@
+name: CI
+
+# Continuous-integration gate.
+#
+# All three jobs are GREEN. Make each a required status check in branch
+# protection (Settings → Branches → require status checks) so nothing that
+# breaks the backend build, the client typecheck, or the tests can merge.
+#
+# - functions-build: guards the security-critical Cloud Functions backend
+#   (regression guard for the payment/auth fixes).
+# - app-typecheck / app-test: guard the client app's types and unit tests.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  functions-build:
+    name: Functions build (tsc)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  app-typecheck:
+    name: App typecheck (tsc --noEmit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+
+  app-test:
+    name: App tests (jest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm test
